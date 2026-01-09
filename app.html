@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 Voronoi - Pro Sürüm</title>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;700&display=swap" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333;
+            --font-family: 'Oswald', sans-serif;
+            --cell-stroke: #ffffff;
+            --st-success: #66bb6a; --st-partial: #ffa726; --st-fail: #ef5350;
+        }
+
+        body {
+            font-family: var(--font-family); background-color: var(--bg-color);
+            margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center;
+        }
+
+        /* --- TOOLBAR (ÜST ARAÇ ÇUBUĞU) --- */
+        .toolbar {
+            display: flex; gap: 20px; align-items: center; justify-content: center;
+            background: #f8f8f8; padding: 10px 25px; border-radius: 50px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        /* Switch Stilleri */
+        .switch-group { display: flex; align-items: center; gap: 8px; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #333; }
+        input:checked + .slider:before { transform: translateX(20px); }
+        .switch-label { font-weight: bold; color: #555; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Screenshot Butonu */
+        .btn-capture {
+            background: #333; color: white; border: none; padding: 8px 16px;
+            border-radius: 20px; font-family: 'Oswald', sans-serif; font-size: 0.9rem;
+            cursor: pointer; display: flex; align-items: center; gap: 8px;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .btn-capture:hover { background: #555; transform: scale(1.05); }
+        .btn-capture svg { width: 16px; height: 16px; fill: white; }
+
+        /* --- GİZLEME MODU STİLLERİ --- */
+        /* "body.goals-hidden" olduğunda hedefleri ve butonları sakla */
+        body.goals-hidden .year-goal-container,
+        body.goals-hidden .month-goal-container,
+        body.goals-hidden .status-wrapper {
+            display: none !important;
+        }
+        /* Hedefler gizlenince Yıllık Başlık değişsin */
+        body.goals-hidden .goal-section::after {
+            content: "2026 ZİNCİRİ KIRMA"; font-size: 2rem; color: #ccc; font-weight: bold; margin-bottom: 20px; display: block;
+        }
+
+        /* --- TIKLA-DÜZENLE ALANLARI --- */
+        .editable-container { width: 100%; position: relative; }
+        .display-view { white-space: pre-wrap; word-wrap: break-word; cursor: pointer; padding: 5px; border-bottom: 1px solid transparent; transition: background 0.2s; }
+        .display-view:hover { background-color: #fafafa; border-bottom: 1px dashed #ccc; }
+        .display-view.empty { color: #ccc; font-style: italic; }
+        .edit-view { display: none; width: 100%; font-family: 'Oswald', sans-serif; text-align: center; border: 1px solid #ddd; padding: 5px; color: #333; outline: none; background: #fff; resize: vertical; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+
+        .goal-section { width: 100%; max-width: 600px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 20px; }
+        .year-goal-container .display-view { font-size: 1.5rem; color: #333; min-height: 40px; }
+        .year-goal-container .edit-view { font-size: 1.5rem; }
+
+        .month-goal-container { width: 85%; margin: 10px auto; }
+        .month-goal-container .display-view { font-size: 0.9rem; color: #555; text-align: center; min-height: 30px; }
+        .month-goal-container .edit-view { font-size: 0.9rem; }
+
+        /* --- DURUM BUTONLARI --- */
+        .status-wrapper { display: flex; gap: 8px; justify-content: center; margin-top: 5px; }
+        .status-btn { border: none; border-radius: 20px; padding: 6px 12px; font-family: 'Oswald', sans-serif; font-size: 0.8rem; cursor: pointer; opacity: 0.4; transition: all 0.3s; color: white; font-weight: bold; letter-spacing: 0.5px; transform: scale(0.95); }
+        .status-btn:hover { opacity: 0.7; transform: scale(1); }
+        .status-btn.active { opacity: 1; transform: scale(1.1); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .btn-success { background-color: var(--st-success); } .btn-partial { background-color: var(--st-partial); } .btn-fail { background-color: var(--st-fail); }
+
+        /* --- PALET --- */
+        .palette-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-bottom: 30px; background: #f9f9f9; padding: 15px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); max-width: 900px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; background: #fff; padding: 5px 10px; border-radius: 20px; border: 1px solid #eee; transition: transform 0.1s; }
+        .legend-item.active { border-color: #333; background: #f0f0f0; transform: scale(1.05); }
+        .color-circle { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+        .label-input { border: none; background: transparent; font-family: 'Oswald', sans-serif; font-size: 0.9rem; width: 100px; color: #555; outline: none; }
+
+        /* --- GRID --- */
+        .calendar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; max-width: 1000px; width: 100%; }
+        .month-wrapper { background: #fff; display: flex; flex-direction: column; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); padding-bottom: 15px; overflow: hidden; }
+
+        .visual-container { position: relative; width: 100%; aspect-ratio: 1; }
+        svg { width: 100%; height: 100%; overflow: visible; display: block; }
+        .month-name { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; color: rgba(0,0,0,0.04); pointer-events: none; text-transform: uppercase; font-weight: 700; z-index: 1; }
+
+        path.cell { fill: #f4f4f4; stroke: var(--cell-stroke); stroke-width: 2px; cursor: pointer; transition: opacity 0.3s, fill 0.3s; }
+        path.cell:hover { opacity: 0.8; }
+        body.chain-mode path.cell { opacity: 0.4; } body.chain-mode path.cell.has-data { opacity: 0.6; }
+        text.day-number { font-size: 10px; fill: #222; font-weight: 600; pointer-events: none; text-anchor: middle; dominant-baseline: central; text-shadow: 0px 0px 2px rgba(255, 255, 255, 0.8); position: relative; z-index: 5; }
+        .chain-line { fill: none; stroke: #d32f2f; stroke-width: 4px; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; opacity: 0.9; }
+
+        @media (max-width: 768px) { .calendar-grid { grid-template-columns: repeat(2, 1fr); } .toolbar { flex-direction: column; gap: 15px; } }
+        @media (max-width: 480px) { .calendar-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar" id="mainToolbar">
+        <div class="switch-group">
+            <label class="switch">
+                <input type="checkbox" id="chainToggle">
+                <span class="slider"></span>
+            </label>
+            <span class="switch-label">ZİNCİR MODU</span>
+        </div>
+
+        <div class="switch-group">
+            <label class="switch">
+                <input type="checkbox" id="goalsToggle" checked>
+                <span class="slider"></span>
+            </label>
+            <span class="switch-label">HEDEFLERİ GÖSTER</span>
+        </div>
+
+        <button class="btn-capture" onclick="takeScreenshot()">
+            <svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+            RESMİ KAYDET
+        </button>
+    </div>
+
+    <div class="goal-section">
+        <div id="yearGoalContainer" class="editable-container year-goal-container">
+            <div class="display-view empty">2026 ANA HEDEFİM (Girmek için tıkla...)</div>
+            <textarea class="edit-view" rows="2"></textarea>
+        </div>
+        <div class="status-wrapper" id="yearStatusWrapper">
+            <button class="status-btn btn-success" onclick="setYearStatus('success')">OLDU 🥳</button>
+            <button class="status-btn btn-partial" onclick="setYearStatus('partial')">KISMEN 😬</button>
+            <button class="status-btn btn-fail" onclick="setYearStatus('fail')">OLMADI 😔</button>
+        </div>
+    </div>
+
+    <div class="palette-container" id="palette"></div>
+
+    <div id="app" class="calendar-grid"></div>
+
+    <script>
+        // --- AYARLAR ---
+        const months = [
+            { name: "Ocak", days: 31 }, { name: "Şubat", days: 28 }, 
+            { name: "Mart", days: 31 }, { name: "Nisan", days: 30 }, 
+            { name: "Mayıs", days: 31 }, { name: "Haziran", days: 30 },
+            { name: "Temmuz", days: 31 }, { name: "Ağustos", days: 31 },
+            { name: "Eylül", days: 30 }, { name: "Ekim", days: 31 },
+            { name: "Kasım", days: 30 }, { name: "Aralık", days: 31 }
+        ];
+
+        const colorDefinitions = [
+            { id: 'joy', code: '#fdd835', defaultLabel: 'Neşe / Enerji' },
+            { id: 'sad', code: '#4fc3f7', defaultLabel: 'Hüzün / Sakin' },
+            { id: 'anger', code: '#e57373', defaultLabel: 'Öfke / Güç' },
+            { id: 'peace', code: '#81c784', defaultLabel: 'Huzur / Denge' },
+            { id: 'fear', code: '#ba68c8', defaultLabel: 'Endişe / Üretken' },
+            { id: 'empty', code: '#ddd', defaultLabel: 'Temizle' }
+        ];
+
+        const DATA_KEY = 'voronoi_2026_data_v10';
+        const META_KEY = 'voronoi_2026_meta_v10';
+        const CHAIN_MODE_KEY = 'voronoi_chain_mode';
+        const GOALS_VISIBLE_KEY = 'voronoi_goals_visible';
+
+        let appData = JSON.parse(localStorage.getItem(DATA_KEY)) || {};
+        let metaData = JSON.parse(localStorage.getItem(META_KEY)) || { goal: "", yearStatus: null, labels: {}, monthlyGoals: {}, monthlyStatus: {} };
+        let activeColorId = colorDefinitions[0].id;
+        let dayCoordinates = {}; 
+
+        // --- YARDIMCI: EDITABLE ---
+        function setupEditableArea(container, initialValue, placeholder, saveCallback) {
+            const display = container.querySelector('.display-view');
+            const edit = container.querySelector('.edit-view');
+            const updateUI = (val) => {
+                edit.value = val;
+                if (!val || val.trim() === "") {
+                    display.innerText = placeholder; display.classList.add('empty');
+                } else {
+                    display.innerText = val; display.classList.remove('empty');
+                }
+            };
+            updateUI(initialValue);
+            display.addEventListener('click', () => {
+                display.style.display = 'none'; edit.style.display = 'block'; edit.focus();
+                edit.style.height = 'auto'; edit.style.height = edit.scrollHeight + 'px';
+            });
+            edit.addEventListener('blur', () => {
+                const val = edit.value; saveCallback(val); updateUI(val);
+                edit.style.display = 'none'; display.style.display = 'block';
+            });
+            edit.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px'; });
+        }
+
+        setupEditableArea(document.getElementById('yearGoalContainer'), metaData.goal || "", "2026 ANA HEDEFİM (Girmek için tıkla...)", (val) => { metaData.goal = val; saveMeta(); });
+        
+        // --- YILLIK DURUM ---
+        function updateYearStatusUI() {
+            const btns = document.querySelectorAll('#yearStatusWrapper .status-btn');
+            btns.forEach(btn => btn.classList.remove('active'));
+            if(metaData.yearStatus) {
+                const activeBtn = document.querySelector(`#yearStatusWrapper .btn-${metaData.yearStatus}`);
+                if(activeBtn) activeBtn.classList.add('active');
+            }
+        }
+        window.setYearStatus = function(status) { metaData.yearStatus = (metaData.yearStatus === status) ? null : status; saveMeta(); updateYearStatusUI(); }
+        updateYearStatusUI();
+
+        // --- TOGGLES & SCREENSHOT ---
+        // 1. Zincir Modu
+        const chainToggle = document.getElementById('chainToggle');
+        let isChainMode = localStorage.getItem(CHAIN_MODE_KEY) === 'true';
+        chainToggle.checked = isChainMode;
+        if(isChainMode) document.body.classList.add('chain-mode');
+        chainToggle.addEventListener('change', (e) => {
+            isChainMode = e.target.checked; localStorage.setItem(CHAIN_MODE_KEY, isChainMode);
+            document.body.classList.toggle('chain-mode', isChainMode); renderAllChains();
+        });
+
+        // 2. Hedefleri Göster Modu
+        const goalsToggle = document.getElementById('goalsToggle');
+        let areGoalsVisible = localStorage.getItem(GOALS_VISIBLE_KEY) !== 'false'; // Default True
+        goalsToggle.checked = areGoalsVisible;
+        if(!areGoalsVisible) document.body.classList.add('goals-hidden');
+        goalsToggle.addEventListener('change', (e) => {
+            areGoalsVisible = e.target.checked; localStorage.setItem(GOALS_VISIBLE_KEY, areGoalsVisible);
+            document.body.classList.toggle('goals-hidden', !areGoalsVisible);
+        });
+
+        // 3. Screenshot Fonksiyonu
+        window.takeScreenshot = function() {
+            const toolbar = document.getElementById('mainToolbar');
+            toolbar.style.display = 'none'; // Screenshot sırasında toolbar'ı gizle
+            
+            html2canvas(document.body, {
+                backgroundColor: "#ffffff",
+                scale: 2, // Retina kalitesi için
+                windowWidth: document.body.scrollWidth,
+                windowHeight: document.body.scrollHeight
+            }).then(canvas => {
+                toolbar.style.display = 'flex'; // Geri getir
+                
+                // İndirme işlemi
+                const link = document.createElement('a');
+                link.download = '2026-zinciri-kirma-voronoi.png';
+                link.href = canvas.toDataURL("image/png");
+                link.click();
+            }).catch(err => {
+                console.error("Hata:", err);
+                toolbar.style.display = 'flex';
+                alert("Ekran görüntüsü alınırken bir sorun oluştu.");
+            });
+        }
+
+        // --- PALET ---
+        const paletteDiv = document.getElementById('palette');
+        colorDefinitions.forEach(def => {
+            const item = document.createElement('div');
+            item.className = `legend-item ${def.id === activeColorId ? 'active' : ''}`;
+            const circle = document.createElement('div');
+            circle.className = 'color-circle';
+            circle.style.backgroundColor = def.id === 'empty' ? '#fff' : def.code;
+            if(def.id === 'empty') { circle.style.border = "2px dashed #999"; circle.innerHTML = "✕"; circle.style.display="flex"; circle.style.alignItems="center"; circle.style.justifyContent="center"; }
+            circle.addEventListener('click', () => { activeColorId = def.id; document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active')); item.classList.add('active'); });
+            const input = document.createElement('input'); input.className = 'label-input';
+            input.value = metaData.labels[def.id] || def.defaultLabel;
+            input.addEventListener('input', (e) => { metaData.labels[def.id] = e.target.value; saveMeta(); });
+            if(def.id === 'empty') { input.value = "Temizle"; input.disabled = true; }
+            item.appendChild(circle); item.appendChild(input); paletteDiv.appendChild(item);
+        });
+
+        // --- TAKVİM ---
+        const appContainer = document.getElementById('app');
+
+        function generateSnakePoints(width, height, count, margin) {
+            const points = [];
+            const cols = Math.ceil(Math.sqrt(count));
+            const rows = Math.ceil(count / cols);
+            const cellW = (width - 2 * margin) / cols;
+            const cellH = (height - 2 * margin) / rows;
+            for (let i = 0; i < count; i++) {
+                let r = Math.floor(i / cols); let c = i % cols;
+                if (r % 2 === 1) c = cols - 1 - c;
+                let baseX = margin + c * cellW + cellW / 2;
+                let baseY = margin + r * cellH + cellH / 2;
+                let jitterX = (Math.random() - 0.5) * cellW * 0.5;
+                let jitterY = (Math.random() - 0.5) * cellH * 0.5;
+                points.push({ id: i + 1, x: baseX + jitterX, y: baseY + jitterY });
+            }
+            return points;
+        }
+
+        function createMonth(monthData, index) {
+            const width = 300;
+            const height = 300;
+            const margin = 15;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'month-wrapper';
+
+            // VISUAL CONTAINER
+            const visualContainer = document.createElement('div');
+            visualContainer.className = 'visual-container';
+            const bgLabel = document.createElement('div');
+            bgLabel.className = 'month-name'; bgLabel.innerText = monthData.name;
+            visualContainer.appendChild(bgLabel);
+            const svg = d3.select(visualContainer).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("id", `svg-month-${index}`);
+            
+            let points = generateSnakePoints(width, height, monthData.days, margin);
+            for (let k = 0; k < 2; k++) {
+                const delaunay = d3.Delaunay.from(points, d => d.x, d => d.y);
+                const voronoi = delaunay.voronoi([0, 0, width, height]);
+                points = points.map((p, i) => {
+                    const poly = voronoi.cellPolygon(i); if (!poly) return p;
+                    const [cx, cy] = d3.polygonCentroid(poly);
+                    return { ...p, x: (p.x + cx) / 2, y: (p.y + cy) / 2 };
+                });
+            }
+            const delaunay = d3.Delaunay.from(points, d => d.x, d => d.y);
+            const voronoi = delaunay.voronoi([0, 0, width, height]);
+
+            points.forEach((p, i) => {
+                const dayId = `m${index}-d${p.id}`;
+                dayCoordinates[dayId] = { x: p.x, y: p.y };
+                const path = svg.append("path")
+                    .attr("d", voronoi.renderCell(i))
+                    .attr("class", "cell")
+                    .attr("id", dayId)
+                    .on("click", function() { toggleDay(dayId, this); });
+                if (appData[dayId]) {
+                    path.classed("has-data", true);
+                    const savedColorId = appData[dayId];
+                    const colorObj = colorDefinitions.find(c => c.id === savedColorId);
+                    if (colorObj) path.style("fill", colorObj.code);
+                }
+                svg.append("text").attr("x", p.x).attr("y", p.y).attr("class", "day-number").text(p.id);
+            });
+            svg.append("g").attr("class", "lines-layer");
+            wrapper.appendChild(visualContainer);
+
+            // AYLIK HEDEF
+            const monthGoalContainer = document.createElement('div');
+            monthGoalContainer.className = 'editable-container month-goal-container';
+            monthGoalContainer.innerHTML = `<div class="display-view empty"></div><textarea class="edit-view" rows="2"></textarea>`;
+            wrapper.appendChild(monthGoalContainer);
+            setupEditableArea(
+                monthGoalContainer,
+                metaData.monthlyGoals ? (metaData.monthlyGoals[index] || "") : "",
+                `${monthData.name} Hedefi...`,
+                (val) => { if(!metaData.monthlyGoals) metaData.monthlyGoals = {}; metaData.monthlyGoals[index] = val; saveMeta(); }
+            );
+
+            // AYLIK DURUM
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'status-wrapper';
+            const createStatusBtn = (status, text, cssClass) => {
+                const btn = document.createElement('button');
+                btn.className = `status-btn ${cssClass}`; btn.innerText = text;
+                if(metaData.monthlyStatus && metaData.monthlyStatus[index] === status) btn.classList.add('active');
+                btn.onclick = () => {
+                    if(!metaData.monthlyStatus) metaData.monthlyStatus = {};
+                    if(metaData.monthlyStatus[index] === status) delete metaData.monthlyStatus[index];
+                    else metaData.monthlyStatus[index] = status;
+                    saveMeta();
+                    const siblings = statusDiv.querySelectorAll('.status-btn');
+                    siblings.forEach(s => s.classList.remove('active'));
+                    if(metaData.monthlyStatus[index]) btn.classList.add('active');
+                };
+                return btn;
+            };
+            statusDiv.appendChild(createStatusBtn('success', 'OLDU 🥳', 'btn-success'));
+            statusDiv.appendChild(createStatusBtn('partial', 'KISMEN 😬', 'btn-partial'));
+            statusDiv.appendChild(createStatusBtn('fail', 'OLMADI 😔', 'btn-fail'));
+            wrapper.appendChild(statusDiv);
+
+            appContainer.appendChild(wrapper);
+        }
+
+        function renderAllChains() {
+            d3.selectAll('.chain-line').remove();
+            if (!isChainMode) return;
+            months.forEach((m, mIndex) => {
+                const svgLayer = d3.select(`#svg-month-${mIndex} .lines-layer`);
+                for (let d = 1; d < m.days; d++) {
+                    const currentId = `m${mIndex}-d${d}`;
+                    const nextId = `m${mIndex}-d${d+1}`;
+                    if (appData[currentId] && appData[nextId]) {
+                        const p1 = dayCoordinates[currentId];
+                        const p2 = dayCoordinates[nextId];
+                        svgLayer.append("line").attr("class", "chain-line")
+                            .attr("x1", p1.x).attr("y1", p1.y).attr("x2", p2.x).attr("y2", p2.y);
+                    }
+                }
+            });
+        }
+
+        function toggleDay(id, element) {
+            const el = d3.select(element);
+            if (activeColorId === 'empty') {
+                el.style("fill", "#f4f4f4"); el.classed("has-data", false); delete appData[id];
+            } else {
+                const colorObj = colorDefinitions.find(c => c.id === activeColorId);
+                el.style("fill", colorObj.code); el.classed("has-data", true); appData[id] = activeColorId;
+            }
+            saveData();
+            if (isChainMode) renderAllChains();
+        }
+
+        function saveData() { localStorage.setItem(DATA_KEY, JSON.stringify(appData)); }
+        function saveMeta() { localStorage.setItem(META_KEY, JSON.stringify(metaData)); }
+
+        months.forEach((m, i) => createMonth(m, i));
+        if(isChainMode) setTimeout(renderAllChains, 100);
+    </script>
+</body>
+</html>
